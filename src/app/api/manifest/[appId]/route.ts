@@ -7,35 +7,36 @@ export async function GET(request: Request, { params }: { params: { appId: strin
   const app = await getApp(params.appId)
 
   if (!app) {
-    return new NextResponse('App not found', { status: 404 })
+    return new NextResponse('Not Found', { status: 404 })
   }
 
   const manifest = {
     name: app.name,
     short_name: app.name,
-    description: app.description || `App for ${app.name}`,
-    start_url: `/view/${app.id}`,
-    scope: `/view/${app.id}`,
-    display: 'standalone',
-    background_color: app.theme_color || '#ffffff',
-    theme_color: app.theme_color || '#000000',
-    icons: [
+    description: app.description || app.name,
+    start_url: app.target_url,
+    display: "standalone",
+    background_color: app.themeColor || "#ffffff",
+    theme_color: app.themeColor || "#000000",
+    icons: app.logoUrl ? [
       {
-        src: app.icon_url || '/icon.png',
-        sizes: '192x192',
-        type: 'image/png'
+        src: app.logoUrl,
+        sizes: "192x192",
+        type: "image/png"
       },
       {
-        src: app.icon_url || '/icon.png',
-        sizes: '512x512',
-        type: 'image/png'
+        src: app.logoUrl,
+        sizes: "512x512",
+        type: "image/png"
       }
-    ]
+    ] : [],
+    screenshots: app.screenshots?.map(src => ({
+        src,
+        type: "image/png",
+        sizes: "1080x1920",
+        form_factor: "narrow"
+    })) || []
   }
 
-  return NextResponse.json(manifest, {
-    headers: {
-      'Content-Type': 'application/manifest+json'
-    }
-  })
+  return NextResponse.json(manifest)
 }

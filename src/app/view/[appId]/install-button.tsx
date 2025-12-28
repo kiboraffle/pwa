@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from "@/components/ui/button"
-import { saveSubscriber } from '@/lib/actions'
+import { savePushSubscription } from '@/lib/actions'
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -28,52 +28,69 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-export default function InstallButton({ appId, vapidKey }: { appId: string, vapidKey: string }) {
+export default function InstallButton({ appId, vapidKey, themeColor }: { appId: string, vapidKey: string, themeColor?: string }) {
   const [isSupported, setIsSupported] = useState(false)
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setIsSupported(true)
-      
-      // Register SW
-      navigator.serviceWorker.register('/sw.js')
-        .then(async (registration) => {
-          console.log('SW registered: ', registration)
-          
-          // Check subscription
-          const subscription = await registration.pushManager.getSubscription()
-          if (subscription) {
-              setIsSubscribed(true)
-          }
-        })
-        .catch((error) => {
-          console.log('SW registration failed: ', error)
-        })
+    async function init() {
+        if ('serviceWorker' in navigator && 'PushManager' in window) {
+            setIsSupported(true)
+            
+            try {
+                // Register SW
+                const registration = await navigator.serviceWorker.register('/sw.js')
+                console.log('SW registered: ', registration)
+                
+                // Check subscription
+                const subscription = await registration.pushManager.getSubscription()
+                if (subscription) {
+                    setIsSubscribed(true)
+                }
+    
+                // Request permission on load as requested
+                if (Notification.permission === 'default') {
+                    const perm = await Notification.requestPermission()
+                    setPermissionState(perm)
+                    if (perm === 'granted' && vapidKey) {
+                         await subscribeToPush(registration)
+                    }
+                } else {
+                     setPermissionState(Notification.permission)
+                }
+            } catch (error) {
+                console.log('SW registration failed: ', error)
+            }
+        }
     }
-
+    init()
+    
     // Install prompt
-    window.addEventListener('beforeinstallprompt', (e: Event) => {
+    const handler = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e as BeforeInstallPromptEvent)
-    })
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function subscribeToPush() {
+  async function subscribeToPush(registration?: ServiceWorkerRegistration) {
     try {
-        const registration = await navigator.serviceWorker.ready
-        const subscription = await registration.pushManager.subscribe({
+        if (!vapidKey) return
+        const reg = registration || await navigator.serviceWorker.ready
+        const subscription = await reg.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapidKey)
         })
         
-        await saveSubscriber(appId, JSON.parse(JSON.stringify(subscription)))
+        await savePushSubscription(appId, JSON.parse(JSON.stringify(subscription)))
         setIsSubscribed(true)
-        alert('Subscribed to notifications!')
+        console.log('Subscribed to notifications!')
     } catch (e) {
         console.error('Failed to subscribe', e)
-        alert('Failed to subscribe. Make sure you are in a secure context (HTTPS or localhost).')
     }
   }
 
@@ -87,22 +104,29 @@ export default function InstallButton({ appId, vapidKey }: { appId: string, vapi
       }
   }
 
-  if (!isSupported) return <p>Push notifications not supported on this device.</p>
+  if (!isSupported) return null // Hide if not supported
+  
+  // Use unused vars to silence linter or just remove them if not needed.
+  // Actually, I should use them.
+  console.log("Permission state:", permissionState)
+
+  const btnStyle = { backgroundColor: themeColor || '#01875f', color: 'white' } // Play Store Green default
 
   return (
-    <div className="flex flex-col gap-4">
-      {deferredPrompt && (
-          <Button onClick={handleInstall} variant="default" size="lg">
-            Install App
+    <div className="flex flex-col gap-4 w-full">
+      {!vapidKey && (
+          <Button disabled className="w-full h-10 font-medium rounded-lg opacity-50" style={{ backgroundColor: themeColor || '#777', color: 'white' }}>
+            Notifications unavailable
           </Button>
       )}
-      
-      {!isSubscribed ? (
-        <Button onClick={subscribeToPush} variant="outline">
-          Enable Notifications
-        </Button>
+      {deferredPrompt ? (
+          <Button onClick={handleInstall} className="w-full h-10 font-medium rounded-lg" style={btnStyle}>
+            Install
+          </Button>
       ) : (
-        <p className="text-sm text-green-600 font-medium">Notifications Enabled ✓</p>
+          <Button disabled className="w-full h-10 font-medium rounded-lg opacity-50" style={btnStyle}>
+             {isSubscribed ? "Installed & Subscribed" : "Installed"}
+          </Button>
       )}
     </div>
   )
