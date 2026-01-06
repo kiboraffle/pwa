@@ -24,12 +24,19 @@ export async function sendNotification(data: NotificationData) {
 
   let subscribers
   let openUrl = '/'
+  
+  console.log(`Sending notification. AppID: ${appId || 'ALL'}`)
+
   if (appId && appId !== 'ALL') {
     const app = await prisma.app.findUnique({ where: { id: appId } })
     subscribers = await prisma.pushSubscription.findMany({ where: { app_id: appId } })
     openUrl = app?.target_url || '/'
+    console.log(`Found ${subscribers.length} subscribers for app ${appId}`)
   } else {
+    // If sending to ALL, we might want to group by endpoint to avoid duplicate sends to same device
+    // But for now, let's just fetch all.
     subscribers = await prisma.pushSubscription.findMany()
+    console.log(`Found ${subscribers.length} total subscribers (ALL)`)
   }
 
   const payload = JSON.stringify({

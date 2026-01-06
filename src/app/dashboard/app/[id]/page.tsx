@@ -11,9 +11,11 @@ import { Star } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AppDetailPage({ params, searchParams }: { params: { id: string }, searchParams: { [key: string]: string | string[] | undefined } }) {
-  const app = await getApp(params.id)
-  const reviews = await getRecentReviews(params.id, 3)
+export default async function AppDetailPage({ params, searchParams }: { params: Promise<{ id: string }>, searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const { id } = await params
+  const sp = await searchParams
+  const app = await getApp(id)
+  const reviews = await getRecentReviews(id, 3)
   
   if (!app) {
     notFound()
@@ -42,7 +44,7 @@ export default async function AppDetailPage({ params, searchParams }: { params: 
     <div className="container mx-auto py-10">
       <div className="mb-4">
         <h1 className="text-3xl font-bold">{app.name}</h1>
-        {searchParams?.saved === '1' && (
+        {sp?.saved === '1' && (
           <div className="mt-3 text-sm text-green-600">Berhasil disimpan</div>
         )}
         <div className="mt-2 flex items-center gap-2">

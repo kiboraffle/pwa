@@ -7,6 +7,8 @@ import { Trash } from 'lucide-react'
 import { DeleteAppButton } from '@/components/delete-app-button'
 import { PushNotificationDialog } from '@/components/push-notification-dialog'
 import { Settings } from 'lucide-react'
+import { LogoutButton } from '@/components/logout-button'
+import { SubscribeDebug } from '@/components/subscribe-debug'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,11 +19,14 @@ export default async function DashboardPage() {
     <div className="container mx-auto py-10">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Your Apps</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <LogoutButton />
           <CreateAppDialog />
           <PushNotificationDialog apps={apps.map(a => ({ id: a.id, name: a.name }))} />
         </div>
       </div>
+
+      <SubscribeDebug />
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {apps.map((app) => (

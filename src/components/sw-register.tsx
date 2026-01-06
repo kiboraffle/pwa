@@ -1,12 +1,11 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { subscribeUser } from '@/lib/actions'
+import { useEffect, useCallback, useState } from 'react'
+import { subscribeUser, subscribeUserToAllApps } from '@/lib/actions'
 
 export default function SWRegister() {
-  const [showBanner, setShowBanner] = useState(false)
-  const [isStandalone, setIsStandalone] = useState(false)
   type NavigatorStandalone = Navigator & { standalone?: boolean }
+  const [showBanner, setShowBanner] = useState(false)
 
   function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4)
@@ -22,9 +21,13 @@ export default function SWRegister() {
   const ensureSubscription = useCallback(async () => {
     try {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
-      const match = typeof window !== 'undefined' ? window.location.pathname.match(/^\/view\/([^/]+)/) : null
-      const appId = match?.[1]
-      if (!appId) return
+      const pathname = typeof window !== 'undefined' ? window.location.pathname : ''
+      
+      const isView = pathname.startsWith('/view/')
+      const isDashboard = pathname.startsWith('/dashboard')
+      
+      if (isView) return // Disable for view app
+      if (!isDashboard) return // Only allow on dashboard (User Panel)
 
       const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       const registration = await navigator.serviceWorker.ready
@@ -36,7 +39,10 @@ export default function SWRegister() {
         })
       }
       if (subscription) {
-        await subscribeUser(appId, JSON.parse(JSON.stringify(subscription)))
+        console.log('Subscription Token Berhasil Dibuat:', subscription)
+        if (isDashboard) {
+            await subscribeUserToAllApps(JSON.parse(JSON.stringify(subscription)))
+        }
       }
     } catch (e) {
       console.error('Subscription update failed', e)
@@ -45,10 +51,14 @@ export default function SWRegister() {
 
   useEffect(() => {
     async function init() {
-      console.log('Notification system initialized')
+      const path = typeof window !== 'undefined' ? window.location.pathname : ''
+      const isView = /^\/view\/([^/]+)/.test(path)
+      
+      if (isView) return // Completely disable on view app
+
       const navigatorStandalone = window.navigator as NavigatorStandalone
       const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || !!navigatorStandalone.standalone
-      setIsStandalone(!!standalone)
+      console.log('Notification system initialized')
       if ('serviceWorker' in navigator) {
         try {
           await navigator.serviceWorker.register('/sw.js')
@@ -56,44 +66,66 @@ export default function SWRegister() {
           console.error('Service Worker registration failed', e)
         }
       }
-      const current = Notification.permission
-      setShowBanner(current === 'default' && !standalone)
-      if (current === 'granted') {
+      
+      // Only proceed if NOT view app (already checked above)
+      if (Notification.permission === 'granted') {
         await ensureSubscription()
+        setShowBanner(false)
+      } else if (Notification.permission === 'default' && !standalone) {
+        // Only show banner/request if not standalone and default permission
+         setShowBanner(true)
       }
     }
     init()
+    
+    const path = typeof window !== 'undefined' ? window.location.pathname : ''
+    const isView = /^\/view\/([^/]+)/.test(path)
+    
+    if (isView) return
+
+    let triggered = false
+    async function requestOnFirstClick() {
+      if (triggered) return
+      triggered = true
+      try {
+        if (Notification.permission === 'default') {
+          const result = await Notification.requestPermission()
+          if (result === 'granted') {
+            await ensureSubscription()
+          }
+        }
+      } catch {}
+    }
+    
+    document.addEventListener('click', requestOnFirstClick, { once: true, capture: true })
+    
+    return () => {
+      document.removeEventListener('click', requestOnFirstClick, { capture: true })
+    }
   }, [ensureSubscription])
 
   async function onActivate() {
     try {
       const result = await Notification.requestPermission()
-      const navigatorStandalone = window.navigator as NavigatorStandalone
-      const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || !!navigatorStandalone.standalone
-      setShowBanner(result === 'default' && !standalone)
       if (result === 'granted') {
         await ensureSubscription()
+        setShowBanner(false)
       }
-    } catch (e) {
-      console.error('Permission request failed', e)
-    }
+    } catch {}
   }
 
-  if (!showBanner || isStandalone) return null
+  if (!showBanner) return null
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
-      <div className="rounded-lg shadow-lg border border-slate-200 bg-white p-4 flex items-center gap-3">
-        <div className="text-sm">
-          Aktifkan Notifikasi untuk Update Terbaru
-        </div>
-        <button
-          onClick={onActivate}
-          className="px-3 py-1.5 rounded-md bg-black text-white text-sm"
-        >
-          Aktifkan
-        </button>
-      </div>
+      <button
+        onClick={onActivate}
+        className="px-3 py-1.5 rounded-md shadow-md border bg-white text-slate-800 text-xs"
+        aria-label="Aktifkan Notifikasi"
+        title="Ketuk untuk aktifkan notifikasi"
+      >
+        Ketuk untuk aktifkan notifikasi
+      </button>
     </div>
   )
 }

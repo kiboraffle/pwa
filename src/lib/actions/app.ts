@@ -73,6 +73,15 @@ export async function updateCustomDomain(appId: string, domain: string | null) {
 export async function updateAppSettings(appId: string, data: { customDomain?: string | null; apkUrl?: string | null }) {
   const domain = data.customDomain?.trim().toLowerCase() || null
   if (domain) {
+    if (domain.includes('://') || domain.includes('/')) {
+      throw new Error('Format domain tidak valid')
+    }
+    const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
+    if (!domainRegex.test(domain)) {
+      throw new Error('Format domain tidak valid')
+    }
+  }
+  if (domain) {
     const exists = await prisma.app.findUnique({ where: { customDomain: domain } })
     if (exists && exists.id !== appId) {
       throw new Error('Domain sudah dipakai aplikasi lain')

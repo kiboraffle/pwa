@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request, { params }: { params: { appId: string } }) {
-  const app = await getApp(params.appId)
+export async function GET(request: Request, { params }: { params: Promise<{ appId: string }> }) {
+  const { appId } = await params
+  const app = await getApp(appId)
 
   if (!app) {
     return new NextResponse('Not Found', { status: 404 })

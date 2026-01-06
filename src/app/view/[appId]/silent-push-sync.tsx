@@ -1,0 +1,43 @@
+'use client'
+
+import { useEffect } from 'react'
+import { subscribeUser } from '@/lib/actions'
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = typeof window !== 'undefined' ? window.atob(base64) : ''
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
+}
+
+export default function SilentPushSync({ appId, vapidKey }: { appId: string, vapidKey?: string }) {
+  useEffect(() => {
+    async function sync() {
+      if (typeof window === 'undefined') return
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+      if (Notification.permission !== 'granted') return
+      try {
+        const registration = await navigator.serviceWorker.ready
+        let subscription = await registration.pushManager.getSubscription()
+        if (!subscription && vapidKey) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidKey)
+          })
+        }
+        if (subscription) {
+          await subscribeUser(appId, JSON.parse(JSON.stringify(subscription)))
+        }
+      } catch {
+        // silent fail
+      }
+    }
+    sync()
+  }, [appId, vapidKey])
+  return null
+}
+

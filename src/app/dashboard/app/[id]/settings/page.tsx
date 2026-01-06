@@ -8,8 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AppSettingsPage({ params, searchParams }: { params: { id: string }, searchParams: { [key: string]: string | string[] | undefined } }) {
-  const app = await getApp(params.id)
+export default async function AppSettingsPage({ params, searchParams }: { params: Promise<{ id: string }>, searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const { id } = await params
+  const sp = await searchParams
+  const app = await getApp(id)
   if (!app) {
     notFound()
   }
@@ -26,7 +28,7 @@ export default async function AppSettingsPage({ params, searchParams }: { params
     <div className="container mx-auto py-10">
       <div className="mb-4">
         <h1 className="text-3xl font-bold">App Settings</h1>
-        {searchParams?.saved === '1' && (
+        {sp?.saved === '1' && (
           <div className="mt-3 text-sm text-green-600">Berhasil disimpan</div>
         )}
       </div>
@@ -38,10 +40,23 @@ export default async function AppSettingsPage({ params, searchParams }: { params
           <form action={handleSave} className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="custom_domain">Custom Domain</Label>
-              <Input id="custom_domain" name="custom_domain" placeholder="domain-anda.com" defaultValue={app.customDomain || ''} />
-              <p className="text-xs text-slate-500">
-                Masukkan domain Anda tanpa http://. Pastikan DNS CNAME sudah diarahkan ke server kami.
-              </p>
+              <Input
+                id="custom_domain"
+                name="custom_domain"
+                placeholder="domain-anda.com"
+                defaultValue={app.customDomain || ''}
+                pattern="^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$"
+                title="Masukkan nama domain valid, tanpa http:// atau path"
+              />
+              <div className="text-xs text-slate-600 space-y-1">
+                <p>Cara Menghubungkan Domain Anda:</p>
+                <p>1. Masuk ke panel domain Anda (GoDaddy, Niagahoster, dll).</p>
+                <p>2. Tambahkan CNAME Record.</p>
+                <p>3. Isi Host/Name dengan @ atau subdomain (misal: app).</p>
+                <p>4. Isi Value/Target dengan: <span className="font-mono">cname.vercel-dns.com</span>.</p>
+                <p className="mt-2"><span className="font-medium">Status:</span> Waiting for DNS</p>
+                <p className="mt-2 text-slate-500">Hosting sudah kami sediakan secara gratis. Anda hanya perlu menghubungkan domain Anda saja.</p>
+              </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="apk_url">APK Download Link</Label>

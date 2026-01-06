@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import webpush from 'web-push'
 import { revalidatePath } from 'next/cache'
+import { createClient as createSupabaseServerClient } from '@/lib/supabase/server'
 
 const vapidKeys = {
   publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
@@ -48,22 +49,21 @@ export async function createApp(formData: FormData) {
     initialReviews = []
   }
   
-  let user = await prisma.user.findFirst()
-  if (!user) {
-    try {
-        user = await prisma.user.create({
-            data: {
-                email: 'demo@example.com',
-                password_hash: 'dummy',
-            }
-        })
-    } catch {
-        // If user exists but findFirst failed or race condition
-        user = await prisma.user.findFirst()
-    }
+  const supabase = await createSupabaseServerClient()
+  const { data: { user: sessionUser } } = await supabase.auth.getUser()
+  console.log('Session User:', sessionUser)
+  if (!sessionUser) {
+    throw new Error('No Supabase session: user not logged in')
   }
-
-  if (!user) throw new Error("Could not find or create user")
+  if (!sessionUser.email) {
+    throw new Error('Supabase user missing email')
+  }
+  let user = await prisma.user.findUnique({ where: { email: sessionUser.email } })
+  if (!user) {
+    user = await prisma.user.create({
+      data: { email: sessionUser.email, password_hash: 'supabase' }
+    })
+  }
 
   const app = await prisma.app.create({
     data: {
@@ -74,7 +74,7 @@ export async function createApp(formData: FormData) {
       description,
       apkUrl,
       screenshots,
-      user_id: user.id
+      userId: user.id
     }
   })
 
@@ -117,10 +117,13 @@ export async function createApp(formData: FormData) {
 }
 
 export async function getApps() {
-    const user = await prisma.user.findFirst()
+    const supabase = await createSupabaseServerClient()
+    const { data: { user: sessionUser } } = await supabase.auth.getUser()
+    if (!sessionUser?.email) return []
+    const user = await prisma.user.findUnique({ where: { email: sessionUser.email } })
     if (!user) return []
     return await prisma.app.findMany({ 
-        where: { user_id: user.id },
+        where: { userId: user.id },
         orderBy: { created_at: 'desc' }
     })
 }
@@ -130,7 +133,32 @@ export async function getApp(appId: string) {
 }
 
 export async function savePushSubscription(appId: string, subscription: { endpoint: string, keys: { auth: string, p256dh: string } }) {
+  if (!appId) {
+      console.error('AppId is missing')
+      return { success: false, error: 'AppId is missing' }
+  }
   try {
+      // Check for existing subscription to prevent duplicates
+      const existing = await prisma.pushSubscription.findFirst({
+          where: {
+              app_id: appId,
+              endpoint: subscription.endpoint
+          }
+      })
+
+      if (existing) {
+          console.log('Subscription already exists, updating keys if changed')
+          // Optionally update keys if they changed
+          await prisma.pushSubscription.update({
+              where: { id: existing.id },
+              data: {
+                  keys_auth: subscription.keys.auth,
+                  keys_p256dh: subscription.keys.p256dh
+              }
+          })
+          return { success: true }
+      }
+
       await prisma.pushSubscription.create({
         data: {
             app_id: appId,
@@ -147,10 +175,52 @@ export async function savePushSubscription(appId: string, subscription: { endpoi
 }
 
 export async function subscribeUser(appId: string, subscription: { endpoint: string, keys: { auth: string, p256dh: string } }) {
+  const supabase = await createSupabaseServerClient()
+  const { data: { user: sessionUser } } = await supabase.auth.getUser()
+  console.log('subscribeUser session:', sessionUser?.email || 'anonymous', 'for app:', appId)
+  console.log('Data yang diterima di server:', subscription)
   return await savePushSubscription(appId, subscription)
 }
+
+function logDebug(message: string) {
+    console.log(`[DEBUG] ${message}`)
+}
+
+export async function subscribeUserToAllApps(subscription: { endpoint: string, keys: { auth: string, p256dh: string } }) {
+  logDebug('subscribeUserToAllApps called')
+  const supabase = await createSupabaseServerClient()
+  const { data: { user: sessionUser } } = await supabase.auth.getUser()
+  
+  if (!sessionUser?.email) {
+      logDebug('subscribeUserToAllApps: No session user found')
+      console.log('subscribeUserToAllApps: No session user found')
+      return { success: false, error: 'Not authenticated' }
+  }
+  
+  logDebug(`User authenticated: ${sessionUser.email}`)
+  
+  const user = await prisma.user.findUnique({ where: { email: sessionUser.email } })
+  if (!user) {
+      logDebug('User not found in Prisma DB')
+      return { success: false, error: 'User not found' }
+  }
+
+  const apps = await prisma.app.findMany({ where: { userId: user.id } })
+  logDebug(`Found ${apps.length} apps for user ${user.id}`)
+  console.log(`Subscribing user ${sessionUser.email} to all ${apps.length} apps`)
+
+  for (const app of apps) {
+      logDebug(`Saving subscription for app ${app.name} (${app.id})`)
+      const result = await savePushSubscription(app.id, subscription)
+      logDebug(`Save result: ${JSON.stringify(result)}`)
+  }
+  return { success: true, count: apps.length }
+}
+
 export async function sendPushNotification(appId: string, title: string, body: string, url: string) {
+    console.log('Mencari subscription untuk App ID:', appId)
     const subscribers = await prisma.pushSubscription.findMany({ where: { app_id: appId } })
+    console.log('Jumlah subscription yang ditemukan di DB:', subscribers.length)
     
     const notificationPayload = JSON.stringify({
         title,

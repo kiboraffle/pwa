@@ -1,0 +1,5 @@
+[2026-01-03T17:22:08.447Z] subscribeUserToAllApps called
+[2026-01-03T17:22:08.754Z] User authenticated: michella@gmail.com
+[2026-01-03T17:22:09.030Z] Found 1 apps for user a1536221-827f-4f52-98c7-3fdd16478c99
+[2026-01-03T17:22:09.030Z] Saving subscription for app KIBO (f4640b85-e9d0-4374-8017-4d1c1f9aae77)
+[2026-01-03T17:22:09.322Z] Save result: {"success":true}
